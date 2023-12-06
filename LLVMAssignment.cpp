@@ -30,7 +30,25 @@
 #include <llvm/Pass.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <iostream>
+
 #include "Liveness.h"
+#include "Dataflow.h"
+#include "PointTo.h"
+
+#define GDEBUG
+
+#ifdef GDEBUG
+#define LOG_DEBUG(msg)                                                         \
+  do {                                                                         \
+    errs() << "\u001b[33m[DEBUG] \u001b[0m" << msg << "\n";                    \
+  } while (0)
+#else
+#define LOG_DEBUG(msg)                                                         \
+  do {                                                                         \
+  } while (0)
+#endif
+
 using namespace llvm;
 static ManagedStatic<LLVMContext> GlobalContext;
 static LLVMContext &getGlobalContext() { return *GlobalContext; }
@@ -50,16 +68,37 @@ struct EnableFunctionOptPass : public FunctionPass {
 char EnableFunctionOptPass::ID = 0;
 
 ///!TODO TO BE COMPLETED BY YOU FOR ASSIGNMENT 3
+//    x := &y: 这是一个取地址操作，对应于 LLVM IR 中的 alloca 指令，用于在栈上分配内存，并返回一个指向该内存的指针。如果 y 是一个变量，这个操作可能涉及到 load 指令，用于加载 y 的值。
+//    x := y: 这是一个赋值操作，在 LLVM IR 中，这通常对应于 store 指令，用于将值 y 存储到变量 x 指向的位置。如果 x 和 y 都是简单的变量（非指针类型），这将是一个简单的 store。
+//    *x = y: 这是一个间接赋值操作，在 LLVM IR 中，这也使用 store 指令，但这里 x 是一个指针，y 的值被存储在 x 指向的位置。
+//    y = *x: 这是一个间接读取操作，在 LLVM IR 中，这对应于 load 指令，用于从 x 指向的内存位置读取值，并将其存储在 y 中。
+//总结一下：
+//    x := &y 可能涉及 alloca 和 load 指令。
+//    x := y 对应于 store 指令。
+//    *x = y 也是 store 指令，但用于间接赋值。
+//    y = *x 对应于 load 指令。
+// !其他语句对指针集无影响
+
 struct FuncPtrPass : public ModulePass {
     static char ID; // Pass identification, replacement for typeid
     FuncPtrPass() : ModulePass(ID) {}
 
-
+    // 首先根据简单约束条件完成初始约束图和worklist的创建，然后根据复杂约束遍历worklist来添加pts元素，最后得到所有可能的指针指向
     bool runOnModule(Module &M) override {
-        errs() << "Hello: ";
-        errs().write_escaped(M.getName()) << '\n';
-        M.dump();
-        errs() << "------------------------------\n";
+        PointToVisitor visitor;
+        DataflowResult<PointToInfo>::Type result;
+        PointToInfo initval;
+
+        //  找到这个Module里面的最后一个定义的函数（在c文件里的最后一个）
+        auto f = M.rbegin(), e = M.rend();
+        while ((f->isIntrinsic() || f->size() == 0) && f != e)  {
+            f++;
+        }
+
+        LOG_DEBUG("Entry function: " << f->getName());
+        compForwardDataflow(&*f, &visitor, &result, initval);
+
+        printDataflowResult<PointToInfo>(errs(), result);
         return false;
     }
 };
@@ -78,12 +117,24 @@ InputFilename(cl::Positional,
 
 
 int main(int argc, char **argv) {
-   LLVMContext &Context = getGlobalContext();
-   SMDiagnostic Err;
-   // Parse the command line to read the Inputfilename
-   cl::ParseCommandLineOptions(argc, argv,
-                              "FuncPtrPass \n My first LLVM too which does not do much.\n");
-
+    LLVMContext &Context = getGlobalContext();
+    SMDiagnostic Err;
+    // Parse the command line to read the Inputfilename
+    std::string s("/root/assign3/bc/test");
+    const char* c[2];
+    if (argc == 1) {
+        std::string t;
+        std::cout << "请输入测试编号：";
+        std::cin >> t;
+        s.append(t).append(".ll");
+        c[1] = s.c_str();
+        // Parse the command line to read the Inputfilename
+        cl::ParseCommandLineOptions(2, c,
+                                    "FuncPtrPass \n My first LLVM too which does not do much.\n");
+    } else {
+    cl::ParseCommandLineOptions(argc, argv,
+                                "FuncPtrPass \n My first LLVM too which does not do much.\n");
+    }
 
    // Load the input module
    std::unique_ptr<Module> M = parseIRFile(InputFilename, Err, Context);
@@ -100,7 +151,7 @@ int main(int argc, char **argv) {
    Passes.add(llvm::createPromoteMemoryToRegisterPass());
 
    /// Your pass to print Function and Call Instructions
-   Passes.add(new Liveness());
+   Passes.add(new FuncPtrPass());
    //Passes.add(new FuncPtrPass());
    Passes.run(*M.get());
 #ifndef NDEBUG

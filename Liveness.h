@@ -69,7 +69,7 @@ class Liveness : public FunctionPass {
 public:
 
    static char ID;
-   Liveness() : FunctionPass(ID) {} 
+   Liveness() : FunctionPass(ID) {}
 
    bool runOnFunction(Function &F) override {
        F.dump();
