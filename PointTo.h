@@ -40,7 +40,9 @@ public:
     }
 
     void compDFVal(Instruction *inst, PointToInfo * dfval) override{
+        // 不处理 LLVM 指令
         if (isa<DbgInfoIntrinsic>(inst)) return;
+        LOG_DEBUG("Current instruction: " << *inst);
         dfval->LiveVars.erase(inst);
         for(User::op_iterator oi = inst->op_begin(), oe = inst->op_end();
             oi != oe; ++oi) {

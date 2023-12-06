@@ -15,6 +15,19 @@
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Function.h>
 
+#define GDEBUG
+
+#ifdef GDEBUG
+#define LOG_DEBUG(msg)                                                         \
+  do {                                                                         \
+    errs() << "\u001b[33m[DEBUG] \u001b[0m" << msg << "\n";                    \
+  } while (0)
+#else
+#define LOG_DEBUG(msg)                                                         \
+  do {                                                                         \
+  } while (0)
+#endif
+
 using namespace llvm;
 
 ///Base dataflow visitor class, defines the dataflow function
@@ -105,6 +118,7 @@ void compBackwardDataflow(Function *fn,
     // Initialize the worklist with all exit blocks
     for (Function::iterator bi = fn->begin(); bi != fn->end(); ++bi) {
         BasicBlock * bb = &*bi;
+        // result : map[BasicBlock] = pair(initval, initval);
         result->insert(std::make_pair(bb, std::make_pair(initval, initval)));
         worklist.insert(bb);
     }
@@ -132,6 +146,7 @@ void compBackwardDataflow(Function *fn,
             worklist.insert(*pi);
         }
     }
+    LOG_DEBUG("end of compBackwardDataflow\n");
 }
 
 template<class T>

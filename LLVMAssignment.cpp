@@ -36,18 +36,6 @@
 #include "Dataflow.h"
 #include "PointTo.h"
 
-#define GDEBUG
-
-#ifdef GDEBUG
-#define LOG_DEBUG(msg)                                                         \
-  do {                                                                         \
-    errs() << "\u001b[33m[DEBUG] \u001b[0m" << msg << "\n";                    \
-  } while (0)
-#else
-#define LOG_DEBUG(msg)                                                         \
-  do {                                                                         \
-  } while (0)
-#endif
 
 using namespace llvm;
 static ManagedStatic<LLVMContext> GlobalContext;
@@ -96,7 +84,7 @@ struct FuncPtrPass : public ModulePass {
         }
 
         LOG_DEBUG("Entry function: " << f->getName());
-        compForwardDataflow(&*f, &visitor, &result, initval);
+        compBackwardDataflow(&*f, &visitor, &result, initval);
 
         printDataflowResult<PointToInfo>(errs(), result);
         return false;
