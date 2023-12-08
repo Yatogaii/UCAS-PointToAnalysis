@@ -84,9 +84,10 @@ struct FuncPtrPass : public ModulePass {
         }
 
         LOG_DEBUG("Entry function: " << f->getName());
-        compBackwardDataflow(&*f, &visitor, &result, initval);
+        compForwardDataflow(&*f, &visitor, &result, initval);
 
-        printDataflowResult<PointToInfo>(errs(), result);
+        // printDataflowResult<PointToInfo>(errs(), result);
+        visitor.printResults(errs());
         return false;
     }
 };
@@ -143,7 +144,7 @@ int main(int argc, char **argv) {
    //Passes.add(new FuncPtrPass());
    Passes.run(*M.get());
 #ifndef NDEBUG
-   system("pause");
+
 #endif
 }
 

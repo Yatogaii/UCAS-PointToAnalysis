@@ -82,22 +82,57 @@ struct DataflowResult {
     typedef typename std::map<BasicBlock *, std::pair<T, T> > Type;
 };
 
-/// 
+///
 /// Compute a forward iterated fixedpoint dataflow function, using a user-supplied
 /// visitor function. Note that the caller must ensure that the function is
 /// in fact a monotone function, as otherwise the fixedpoint may not terminate.
-/// 
+///
 /// @param fn The function
 /// @param visitor A function to compute dataflow vals
-/// @param result The results of the dataflow 
+/// @param result The results of the dataflow
 /// @initval the Initial dataflow value
+/// 根据已有的compBackwardDataflow补充Forward的实现
 template<class T>
 void compForwardDataflow(Function *fn,
-    DataflowVisitor<T> *visitor,
-    typename DataflowResult<T>::Type *result,
-    const T & initval) {
-    return;
+                         DataflowVisitor<T> *visitor,
+                         typename DataflowResult<T>::Type *result,
+                         const T & initval) {
+
+    std::set<BasicBlock *> worklist;
+
+    // Initialize the worklist with all entry blocks
+    for (Function::iterator bi = fn->begin(); bi != fn->end(); ++bi) {
+        BasicBlock * bb = &*bi;
+        // result : map[BasicBlock] = pair(initval, initval);
+        result->insert(std::make_pair(bb, std::make_pair(initval, initval)));
+        worklist.insert(bb);
+    }
+
+    // Iteratively compute the dataflow result
+    while (!worklist.empty()) {
+        BasicBlock *bb = *worklist.begin();
+        worklist.erase(worklist.begin());
+
+        // Merge all incoming value
+        T bbentryval = (*result)[bb].first;
+        for (pred_iterator pi = pred_begin(bb), pe = pred_end(bb); pi != pe; ++pi) {
+            BasicBlock *pred = *pi;
+            visitor->merge(&bbentryval, (*result)[pred].second);
+        }
+
+        (*result)[bb].first = bbentryval;
+        visitor->compDFVal(bb, &bbentryval, true);
+        (*result)[bb].second = bbentryval;
+
+        // If outgoing value changed, propagate it along the CFG
+        if (bbentryval == (*result)[bb].first) continue;
+
+        for (succ_iterator si = succ_begin(bb), se = succ_end(bb); si != se; ++si) {
+            worklist.insert(*si);
+        }
+    }
 }
+
 /// 
 /// Compute a backward iterated fixedpoint dataflow function, using a user-supplied
 /// visitor function. Note that the caller must ensure that the function is
@@ -130,12 +165,16 @@ void compBackwardDataflow(Function *fn,
 
         // Merge all incoming value
         T bbexitval = (*result)[bb].second;
+        // succ_iterator 是一个迭代器，用于遍历一个基本块的所有后继基本块
         for (auto si = succ_begin(bb), se = succ_end(bb); si != se; si++) {
             BasicBlock *succ = *si;
+            // 在这个 compBackwardDataflow 函数中，merge 的作用是将所有后继基本块的入口数据流值合并到当前基本块的出口数据流值中。
+            //在迭代数据流分析中，每个基本块的数据流值是由其所有后继基本块的数据流值通过一个合并函数（这里的 merge）计算得出的。这个过程会不断重复，直到结果稳定为止。
             visitor->merge(&bbexitval, (*result)[succ].first);
         }
 
         (*result)[bb].second = bbexitval;
+        // 计算当前基本块的出口数据流值。
         visitor->compDFVal(bb, &bbexitval, false);
 
         // If outgoing value changed, propagate it along the CFG
