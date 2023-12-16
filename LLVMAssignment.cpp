@@ -72,6 +72,7 @@ struct FuncPtrPass : public ModulePass {
     FuncPtrPass() : ModulePass(ID) {}
 
     // 首先根据简单约束条件完成初始约束图和worklist的创建，然后根据复杂约束遍历worklist来添加pts元素，最后得到所有可能的指针指向
+    /// 2023-12-16 还有 28 30 31 33 34
     bool runOnModule(Module &M) override {
         PointToVisitor visitor;
         DataflowResult<PointToInfo>::Type result;

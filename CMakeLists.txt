@@ -57,11 +57,11 @@ set(test_data
 		#"test28\\;^22 : plus\n29 : foo\n34 : malloc\n36 : malloc\n38 : malloc\n47 : clever\n$"
 		"test28\\;^22 : plus\n29 : foo\n34 : malloc\n36 : malloc\n38 : malloc\n47 : clever\n$"
 		"test29\\;^21 : ((plus, minus)|(minus, plus))\n26 : clever\n27 : ((plus, minus)|(minus, plus))\n41 : malloc\n46 : foo\n51 : foo\n$"
-		"test30\\;^41 : foo, clever\n42 : plus, minus\n$"
-		"test31\\;^39 : foo\n40 : plus\n44 : clever\n45 : plus, minus\n47 : plus, minus\n$"
+		"test30\\;^41 : ((foo, clever)|(clever, foo))\n42 : ((plus, minus)|(minus, plus))\n$"
+		"test31\\;^39 : foo\n40 : plus\n44 : clever\n45 : ((plus, minus)|(minus, plus))\n47 : ((plus, minus)|(minus, plus))\n$"
 		"test32\\;^38 : foo\n56 : clever\n57 : minus\n58 : minus\n$"
-		"test33\\;^27 : minus\n38 : foo\n70 : make_simple_alias\n75 : make_alias\n81 : clever\n82 : minus\n83 : plus, minus\n84 : swap_w\n85 : minus\n$"
-		"test34\\;^39 : swap_w\n40 : plus,minus\n49 : make_simple_alias\n51 : make_simple_alias\n52 : foo\n68 : make_simple_alias\n70 : make_simple_alias\n75 : make_alias\n79 : clever\n80 : clever\n81 : plus, minus\n$"
+		"test33\\;^27 : minus\n38 : foo\n70 : make_simple_alias\n75 : make_alias\n81 : clever\n82 : minus\n83 : ((plus, minus)|(minus, plus))\n84 : swap_w\n85 : minus\n$"
+		"test34\;39 : swap_w\n40 : ((plus, minus)|(minus, plus))\n49 : make_simple_alias\n51 : make_simple_alias\n52 : foo\n68 : make_simple_alias\n70 : make_simple_alias\n75 : make_alias\n79 : clever\n80 : clever\n81 : ((plus, minus)|(minus, plus))\n$"
 )
 
 foreach(test_info ${test_data})
@@ -71,7 +71,7 @@ foreach(test_info ${test_data})
 			NAME ${test_name}
 			COMMAND bash -c "${LLVM_TOOLS_BINARY_DIR}/clang -O0 -g3 -emit-llvm ${CMAKE_CURRENT_SOURCE_DIR}/test/${test_name}.c -c -o ${CMAKE_CURRENT_SOURCE_DIR}/test/${test_name}.bc && $<TARGET_FILE:assignment3> ${CMAKE_CURRENT_SOURCE_DIR}/test/${test_name}.bc"
 	)
-	set_tests_properties(${test_name} PROPERTIES TIMEOUT 3)
+	set_tests_properties(${test_name} PROPERTIES TIMEOUT 1)
 	set_tests_properties(${test_name} PROPERTIES
 			PASS_REGULAR_EXPRESSION ${test_val}
 			LABELS "official"
