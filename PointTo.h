@@ -20,7 +20,7 @@ struct PointToInfo {
     PointToInfo() : LiveVars() {}
 
     PointToInfo(const PointToInfo &info) {
-        LOG_DEBUG("Trigger copy constructor!");
+        //LOG_DEBUG("Trigger copy constructor!");
         pointToSets = info.pointToSets;
         bindings = info.bindings;
     }
@@ -35,7 +35,7 @@ struct PointToInfo {
 
     // 重载 PointToSet的 = 运算符
     PointToInfo &operator=(const PointToInfo &info) {
-        LOG_DEBUG("Trigger = operator!");
+        //LOG_DEBUG("Trigger = operator!");
         pointToSets = info.pointToSets;
         bindings = info.bindings;
         return *this;
@@ -159,7 +159,7 @@ public:
 
 
     void handleAllocaInst(AllocaInst *pInst, PointToInfo *pInfo) {
-        LOG_DEBUG("Alloca Inst!" << *pInst);
+        //LOG_DEBUG("Alloca Inst!" << *pInst);
     }
 
     /// DEBUG test00 进入comp嵌套后，第三次storeInst结果出错：
@@ -167,36 +167,63 @@ public:
     /// 当前：%a_fptr.addr: {%a_fptr}
     /// 错因：pInfo->hasBinding(value)里的参数一定是value，而不是pointer，因为是store的源操作数有binding才需要考虑
     void handleStoreInst(StoreInst *pInst, PointToInfo *pInfo) {
-        LOG_DEBUG("Store Inst!" << *pInst);
+        //LOG_DEBUG("Store Inst!" << *pInst);
         Value *value = pInst->getValueOperand();
         Value *pointer = pInst->getPointerOperand();
 
         // 忽略常量数据
         // https://llvm.org/doxygen/classllvm_1_1Constant.html
         if (isa<ConstantData>(value)) {
-            LOG_DEBUG("Skipped constant data " << *value << " in StoreInst.");
+            //LOG_DEBUG("Skipped constant data " << *value << " in StoreInst.");
             return;
         }
 
         // 如果有别名，那么把别名的值也给加入到 PTS 里。
-        // 三维地图看世界
         // 注意这里 key 是 pointer，value 是 value
         /// *IMPORTANT* 这里的hasBinding的key一定是pointer
         //if(pInfo->hasBinding(pointer)){
-        if(pInfo->hasBinding(value)){
-            pInfo->pointToSets[pointer].insert(pInfo->bindings[value].begin(), pInfo->bindings[value].end());
-        } else { // 否则只加入当前的值
-            pInfo->pointToSets[pointer].insert(value);
+//        if(pInfo->hasBinding(value)){
+//            pInfo->pointToSets[pointer].insert(pInfo->bindings[value].begin(), pInfo->bindings[value].end());
+//        } else { // 否则只加入当前的值
+//            pInfo->pointToSets[pointer].insert(value);
+//        }
+
+        // test02 需要处理一个指针多个binding的情况。
+        std::set<Value *> processSet = {pointer};
+        std::set<Value *> pointToSetTargets;
+        while(processSet.size() > 0){
+            Value *curPointer = *(processSet.begin());
+            processSet.erase(curPointer);
+            // 如果当前处理的指针有绑定，那么用绑定的值替换实际的值，没有绑定就把当前的这个加入到PTS待处理队列
+            if(pInfo->hasBinding(curPointer)){
+                processSet.insert(pInfo->bindings[curPointer].begin(), pInfo->bindings[curPointer].end());
+            } else {
+                pointToSetTargets.insert(curPointer);
+            }
         }
 
-        // End of StoreInst
-        LOG_DEBUG("End of StoreInst" << *pInfo);
+        // 同上，开始处理value，看看value有没有binding
+        std::set<Value *> values;
+        if (pInfo->hasBinding(value)) {
+            values = pInfo->getBinding(value);
+        } else {
+            values.insert(value);
+        }
 
-
+        // 开始处理 pointToSetTargets，更新 pointToSets
+        if (pointToSetTargets.size() == 1) {
+            pInfo->pointToSets[*pointToSetTargets.begin()] = values;
+        } else {
+            for (Value *target : pointToSetTargets) {
+                std::set<Value *> oldPTS = pInfo->pointToSets[target];
+                oldPTS.insert(values.begin(), values.end());
+                pInfo->pointToSets[target] = oldPTS;
+            }
+        }
     }
 
     void handleLoadInst(LoadInst *pInst, PointToInfo *pInfo) {
-        LOG_DEBUG("Load Inst!" << *pInst);
+        //LOG_DEBUG("Load Inst!" << *pInst);
         // 获取 value 以及 pointer
         Value *pointer = pInst->getPointerOperand();
         Value *result = dyn_cast<Value>(pInst);
@@ -208,16 +235,43 @@ public:
         }
 
         // 获取binding， binding 的值是 pointToSets里的值
-        pInfo->setBinding(result, pInfo->pointToSets[pointer]);
-        LOG_DEBUG("Load Inst!" << *pInst << " result: " << *result << " binding: " << pInfo->bindings[result]);
+        std::set<Value *> bindings;
+        if (pInfo->hasBinding(pointer)) {
+            // 如果pointer有绑定，获取所有绑定的目标
+            std::set<Value *> boundTargets = pInfo->getBinding(pointer);
+            for (Value *boundTarget : boundTargets) {
+                // 对每个绑定的目标，获取其点对集并合并
+                std::set<Value *> boundPTS = pInfo->pointToSets[boundTarget];
+                bindings.insert(boundPTS.begin(), boundPTS.end());
+            }
+        } else {
+            // 如果没有绑定，直接使用原先的getPTS
+            bindings = pInfo->pointToSets[pointer];
+        }
+
+        pInfo->setBinding(result, bindings);
+        LOG_DEBUG("Load Inst Get Result!" << *pInst << " result: " << *result << " binding: " << pInfo->bindings[result]);
     }
 
+    /// DEBUG test02 GEPInst，
+    /// getelementptr 指令用于计算复合数据类型（如结构体或数组）内部元素的地址。
+    /// 也是处理binding 就行
     void handleGEPInst(GetElementPtrInst *pInst, PointToInfo *pInfo) {
-        LOG_DEBUG("GetElementPtr Inst!" << *pInst);
+        //LOG_DEBUG("GetElementPtr Inst!" << *pInst);
+
+        Value *ptrval = pInst->getPointerOperand();
+        Value *result = dyn_cast<Value>(pInst);
+
+        if (pInfo->hasBinding(ptrval)) {
+            pInfo->setBinding(result, pInfo->getBinding(ptrval));
+        } else {
+            pInfo->setBinding(result, {ptrval});
+        }
     }
+
 
     void handleCastInst(CastInst *pInst, PointToInfo *pInfo) {
-        LOG_DEBUG("Cast Inst!" << *pInst);
+        //LOG_DEBUG("Cast Inst!" << *pInst);
     }
 
     // 由于程序传入的只有 main 函数，所以需要在 call 里面执行具体的函数分析
@@ -234,8 +288,7 @@ public:
      /// handleStoreInst是比能跑出结果的代码少了一个 bingding的，但是在传入前的时候却是不少的，但是传入后，在嵌套的compForwardDataflow里调用compDFVal
      /// 时，少了一个binding。 错因发现是忘了处理 compForwardDataflow 以支持非空的 result 变量初始化。根本原因是 PointToSets的拷贝构造函数错误。
     void handleCallInst(CallInst *callInst, PointToInfo *pInfo) {
-        LOG_DEBUG("Call Inst!" << *callInst);
-        LOG_DEBUG("Cuurent stat "<< *pInfo);
+        //LOG_DEBUG("Call Inst!" << *callInst);
         Value *operand = callInst->getCalledOperand();
         std::set<std::string>& curLineResult = results[callInst->getDebugLoc().getLine()];
 
@@ -255,10 +308,8 @@ public:
 
 
         // 开始处理函数队列
-        LOG_DEBUG("funcQueue Size : " << funcQueue.size());
+        ////LOG_DEBUG("funcQueue Size : " << funcQueue.size());
         for(auto* funcVal : funcQueue) {
-            LOG_DEBUG("Start handle funcQueue");
-            LOG_DEBUG(*funcVal);
             Function* func = dyn_cast<Function>(funcVal);
 
             /// 函数调用准备变量
@@ -294,20 +345,20 @@ public:
                 std::set<Value *> curCalleeBinding;
                 if (pInfo->hasBinding(callerArg)) {
                     curCalleeBinding = pInfo->getBinding(callerArg);
-                    LOG_DEBUG("CalleeArg Has Binding!" << curCalleeBinding);
+                    ////LOG_DEBUG("CalleeArg Has Binding!" << curCalleeBinding);
                 } else { // 如果没有 binding，就把被传的变量作为binding
                     curCalleeBinding = {callerArg};
-                    LOG_DEBUG("CallerArg Binding" << *callerArg);
+                    //LOG_DEBUG("CallerArg Binding" << *callerArg);
                 }
                 calleeArgBindings.setBinding(calleeArg, curCalleeBinding);
                 // 开始处理各个binding的pointToSet，方便过一会递归调用的初始状态
                 while (!curCalleeBinding.empty()) {
                     Value *curBinding = *curCalleeBinding.begin();
                     curCalleeBinding.erase(curCalleeBinding.begin());
-                    // LOG_DEBUG("Finding dependency for " << *v);
+                    // //LOG_DEBUG("Finding dependency for " << *v);
                     if (pInfo->hasPointToSet(curBinding)) {
                         std::set<Value *> curPointToSet = pInfo->getPointToSet(curBinding);
-                        LOG_DEBUG("Dependencies found: " << curPointToSet);
+                        //LOG_DEBUG("Dependencies found: " << curPointToSet);
                         calleeArgBindings.setPointToSet(curBinding, curPointToSet);
                         argPairs.insert(std::make_pair(curBinding, curBinding));
                         // 为处理列表里添加新的需要处理的元素
@@ -320,15 +371,14 @@ public:
             if(func->getReturnType()->isPointerTy()){
                 // 这里需要特殊处理一下 initval，因为递归调用的时候已经是有状态的了
                 // 直接调用无法保留状态
-                LOG_DEBUG("Function " << func->getName()
-                                      << " has a pointer return type.");
+                //LOG_DEBUG("Function " << func->getName() << " has a pointer return type.");
                 calleeArgBindings.setBinding(func, {func});
                 argPairs.insert(std::make_pair(dyn_cast<Value>(callInst), func));
             }
 
             // 处理被 call 的函数，直接使用 compForwardDataflow 来处理
             result[targetEntry].first = calleeArgBindings; // incomings of target entry
-            LOG_DEBUG("---------------------------------- Now recursively handling function: " << func->getName() << "----------------------------------");
+            //LOG_DEBUG("---------------------------------- Now recursively handling function: " << func->getName() << "----------------------------------");
             compForwardDataflow(func, this, &result, initval);
             PointToInfo &calleeOutBindings = result[targetExit].second; // outcomings of target exit
 
@@ -355,58 +405,82 @@ public:
     }
 
 
+    void handleReturnInst(ReturnInst* returnInst, PointToInfo *pInfo) {
+        Value *value = returnInst->getReturnValue();
+        Value *func = returnInst->getFunction();
+
+        //LOG_DEBUG("Return Inst ! " << *returnInst);
+
+        if (pInfo->hasBinding(func)) {
+            // 把返回值直接绑定到所在函数上
+            if (pInfo->hasBinding(value)) {
+                pInfo->setBinding(func, pInfo->getBinding(value));
+            } else {
+                pInfo->setBinding(func, {value});
+            }
+        }
+    }
+
     void handlePHINode(PHINode *pNode, PointToInfo *pInfo) {
-        LOG_DEBUG("handle PHINode!" << *pNode);
+        //LOG_DEBUG("handle PHINode!" << *pNode);
     }
 
     void handleSelectInst(SelectInst *pInst, PointToInfo *pInfo) {
-        LOG_DEBUG("handle select!" << *pInst);
+        //LOG_DEBUG("handle select!" << *pInst);
 
     }
 
-    void compDFVal(Instruction *inst, PointToInfo * dfval) override{
+    void compDFVal(Instruction *inst, PointToInfo * pInfo) override{
+        LOG_DEBUG("Current Instruction: " << *inst);
+
         // 不处理 LLVM 指令
         if (isa<DbgInfoIntrinsic>(inst)) return;
 
         if (AllocaInst *allocaInst = dyn_cast<AllocaInst>(inst)) {
             // 处理Alloca指令，没什么用，只声明不赋值
-            handleAllocaInst(allocaInst, dfval);
+            handleAllocaInst(allocaInst, pInfo);
         } else if (StoreInst *storeInst = dyn_cast<StoreInst>(inst)) {
             // 处理Store指令
-            handleStoreInst(storeInst, dfval);
+            handleStoreInst(storeInst, pInfo);
         } else if (LoadInst *loadInst = dyn_cast<LoadInst>(inst)) {
             // 处理Load指令
-            handleLoadInst(loadInst, dfval);
+            handleLoadInst(loadInst, pInfo);
         } else if (GetElementPtrInst *gepInst = dyn_cast<GetElementPtrInst>(inst)) {
             // 处理GetElementPtr指令
-            handleGEPInst(gepInst, dfval);
+            handleGEPInst(gepInst, pInfo);
         } else if (CastInst *castInst = dyn_cast<CastInst>(inst)) {
             // 处理Cast指令
-            handleCastInst(castInst, dfval);
+            handleCastInst(castInst, pInfo);
+        } else if (MemSetInst *memSetInst = dyn_cast<MemSetInst>(inst)) {
+            // 捕获但不需要处理，防止它被后面CallInst的处理逻辑捕获
+            // 比如这样的：call void @llvm.memset.p0i8.i64(i8* align 8 %0, i8 0, i64 8, i1 false), !dbg !26
         } else if (CallInst *callInst = dyn_cast<CallInst>(inst)) {
             // 处理函数调用
-            handleCallInst(callInst, dfval);
+            handleCallInst(callInst, pInfo);
         } else if (PHINode *phiNode = dyn_cast<PHINode>(inst)) {
             // 处理PHI节点
-            handlePHINode(phiNode, dfval);
+            handlePHINode(phiNode, pInfo);
         } else if (SelectInst *selectInst = dyn_cast<SelectInst>(inst)) {
             // 处理Select指令
-            handleSelectInst(selectInst, dfval);
+            handleSelectInst(selectInst, pInfo);
+        } else if (ReturnInst *returnInst = dyn_cast<ReturnInst>(inst)) {
+            handleReturnInst(returnInst, pInfo);
         } else {
-            LOG_DEBUG("handle UNKNOWN instruction!" << *inst);
+                //LOG_DEBUG("handle UNKNOWN instruction!" << *inst);
         }
+
     }
 
     // 打印函数调用结果，输出模式为 'unsigned: string, string'，结果从 results 里面取
     // std::set<unsigned , std::set<std::string>> results;
     void printResults(raw_ostream& ostream) {
-        LOG_DEBUG("Start Print Result");
+        //LOG_DEBUG("Start Print Result");
         for (const auto& result : results) {
             const unsigned& key = result.first;
             const std::set<std::string>& values = result.second;
 
             if (!values.empty()) {
-                ostream << key << ": ";
+                ostream << key << " : ";
                 // 使用迭代器，遍历values里的所有字符串
                 for (auto it = values.begin(); it != values.end(); ++it) {
                     // 如果不是第一个字符串，就在前面加上逗号

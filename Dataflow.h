@@ -15,7 +15,7 @@
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Function.h>
 
-#define GDEBUG
+//#define GDEBUG
 
 #ifdef GDEBUG
 #define LOG_DEBUG(msg)                                                         \
@@ -118,9 +118,7 @@ void compForwardDataflow(Function *fn,
         worklist.erase(worklist.begin());
 
         // Merge all incoming value
-        LOG_DEBUG("Result first!" << (*result)[bb].first);
         T bbentryval = (*result)[bb].first;
-        LOG_DEBUG("BBEntryVal" << bbentryval);
         for (pred_iterator pi = pred_begin(bb), pe = pred_end(bb); pi != pe; ++pi) {
             BasicBlock *pred = *pi;
             visitor->merge(&bbentryval, (*result)[pred].second);
@@ -130,15 +128,23 @@ void compForwardDataflow(Function *fn,
         /// 发现是下面这一行的来回赋值把binding值弄没了，应该是没有正常实现这个=的重载。
         /// 实际是没有正确编写拷贝构造函数
         (*result)[bb].first = bbentryval;
+        LOG_DEBUG("Start Handling Basic block " << bb->getName());
         visitor->compDFVal(bb, &bbentryval, true);
         (*result)[bb].second = bbentryval;
+
+        LOG_DEBUG("Basic block " << bb->getName() << " in function " << bb->getParent()->getName() << " finished. ");
+        LOG_DEBUG("Incoming values: \n" << (*result)[bb].first);
+        LOG_DEBUG("Outcoming values(BBEntryval): \n" << (*result)[bb].second);
 
         // If outgoing value changed, propagate it along the CFG
         if (bbentryval == (*result)[bb].first) continue;
 
+        // DEBUG test02 这里没有正确添加上 Basic block if.end6 导致没有结果产出
+        // 不对，已经正常 handle if.end6 了，但是为什么没有到 BasicBlock end 哪里呢
         for (succ_iterator si = succ_begin(bb), se = succ_end(bb); si != se; ++si) {
             worklist.insert(*si);
         }
+
     }
 }
 

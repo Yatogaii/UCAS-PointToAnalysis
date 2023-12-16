@@ -1,0 +1,33 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/c++",
+      "-g",
+      "-c",
+      "-I",
+      "/usr/local/llvm/include",
+      "-I",
+      "/usr/local/llvm/include",
+      "-I",
+      ".",
+      "-I",
+      "/usr/local/llvm/include",
+      "-I",
+      "/usr/local/llvm/include",
+      "-I",
+      ".",
+      "-I",
+      "/usr/local/llvm/include",
+      "-I",
+      ".",
+      "-I",
+      ".",
+      "-o",
+      "CMakeFiles/assignment3.dir/LLVMAssignment.cpp.o",
+      "/root/assign3/LLVMAssignment.cpp"
+    ],
+    "directory": "/root/assign3/build",
+    "file": "/root/assign3/LLVMAssignment.cpp",
+    "output": "/root/assign3/build/CMakeFiles/assignment3.dir/LLVMAssignment.cpp.o"
+  }
+]
