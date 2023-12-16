@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
         std::string t;
         std::cout << "请输入测试编号：";
         std::cin >> t;
-        s.append(t).append(".ll");
+        s.append(t).append(".bc");
         c[1] = s.c_str();
         // Parse the command line to read the Inputfilename
         cl::ParseCommandLineOptions(2, c,

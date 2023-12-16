@@ -287,7 +287,12 @@ public:
      /// DONE: test00 DEBUG: 在嵌套调用时，第二层在处理funcQueue的时候就会遇到func为Null的情况，与可行的开源答案调试对比了一下，进入handleCall后的第一个
      /// handleStoreInst是比能跑出结果的代码少了一个 bingding的，但是在传入前的时候却是不少的，但是传入后，在嵌套的compForwardDataflow里调用compDFVal
      /// 时，少了一个binding。 错因发现是忘了处理 compForwardDataflow 以支持非空的 result 变量初始化。根本原因是 PointToSets的拷贝构造函数错误。
-    void handleCallInst(CallInst *callInst, PointToInfo *pInfo) {
+     /// DEBUG test18
+     /// 1. 详细对比每个 basicblock 中的 pTS后发现，是 if 处理后的pts没有正确传递给 else，导致else入口的pts是
+     /// 执行 if 之前的，这就导致了 if 基本可以认为没被处理，所以输出缺少 if 对应的那个。
+     /// 2. 不对，30行的输出有 clever 和 foo，说明 if 和 else 都被正确处理了，出问题的是 foo 的返回值没有被正确记录。
+     /// 3. 发现是递归执行完更新pInfo的 pInfo->setBinding(pair.first, outBinding); 覆盖了原有的binding
+     void handleCallInst(CallInst *callInst, PointToInfo *pInfo) {
         //LOG_DEBUG("Call Inst!" << *callInst);
         Value *operand = callInst->getCalledOperand();
         std::set<std::string>& curLineResult = results[callInst->getDebugLoc().getLine()];
@@ -297,6 +302,8 @@ public:
             curLineResult.insert(operand->getName());
             return;
         }
+
+        //
 
         // 存放即将要处理的函数列表
         std::set<Value *> funcQueue;
@@ -309,7 +316,9 @@ public:
 
         // 开始处理函数队列
         ////LOG_DEBUG("funcQueue Size : " << funcQueue.size());
-        for(auto* funcVal : funcQueue) {
+         // test18: 添加一个map，防止覆盖
+         std::set<Value*> isRepeat;
+         for(auto* funcVal : funcQueue) {
             Function* func = dyn_cast<Function>(funcVal);
 
             /// 函数调用准备变量
@@ -376,17 +385,33 @@ public:
                 argPairs.insert(std::make_pair(dyn_cast<Value>(callInst), func));
             }
 
+            // for test18
+            for(auto& each : argPairs){
+                isRepeat.insert(each.first);
+            }
+
             // 处理被 call 的函数，直接使用 compForwardDataflow 来处理
             result[targetEntry].first = calleeArgBindings; // incomings of target entry
             //LOG_DEBUG("---------------------------------- Now recursively handling function: " << func->getName() << "----------------------------------");
             compForwardDataflow(func, this, &result, initval);
             PointToInfo &calleeOutBindings = result[targetExit].second; // outcomings of target exit
 
+            LOG_DEBUG("处理完毕函数 " << func->getName() << "，前的PTS \n" << *pInfo);
             // 开始比较处理前后的PointToSets变化，索引为 argPairs
             for (auto &pair : argPairs) {
                 if (calleeOutBindings.hasBinding(pair.second)) {
                     const std::set<Value *> &outBinding = calleeOutBindings.getBinding(pair.second);
-                    pInfo->setBinding(pair.first, outBinding);
+                    LOG_DEBUG("处理函数 " << func->getName() << "后，" << *pair.first << "的binding变化前," << pInfo->getBinding(pair.first));
+                    if(isRepeat.find(pair.first) != isRepeat.end() && pInfo->getBinding(pair.first).size()!=0){
+                        auto curBinding = pInfo->getBinding(pair.first);
+                        for(auto* each : outBinding)
+                            curBinding.insert(each);
+                        LOG_DEBUG("CurBinding " << curBinding);
+                        pInfo->setBinding(pair.first, curBinding);
+                    } else {
+                        pInfo->setBinding(pair.first, outBinding);
+                    }
+                    LOG_DEBUG("处理函数 " << func->getName() << "后，" << *pair.first << "的binding变化后," << pInfo->getBinding(pair.first));
                 }
 
                 std::set<Value *> queue = {pair.second};
@@ -401,6 +426,7 @@ public:
                     }
                 }
             }
+            LOG_DEBUG("处理完毕函数 " << func->getName() << "，后的PTS \n" << *pInfo);
         }
     }
 
