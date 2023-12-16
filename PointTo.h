@@ -430,6 +430,15 @@ public:
 
     }
 
+    // MemcpyInst 就是复制一个指针的内存到另外一个，考虑直接复制PTS，binding应该不用
+    void handleMemcpyInst(MemCpyInst *pInst, PointToInfo *pInfo) {
+        auto* left = pInst->getSource();
+        auto* right = pInst->getDest();
+
+        // 复制PTS
+        pInfo->pointToSets[right] = pInfo->pointToSets[left];
+    }
+
     void compDFVal(Instruction *inst, PointToInfo * pInfo) override{
         LOG_DEBUG("Current Instruction: " << *inst);
 
@@ -454,7 +463,9 @@ public:
         } else if (MemSetInst *memSetInst = dyn_cast<MemSetInst>(inst)) {
             // 捕获但不需要处理，防止它被后面CallInst的处理逻辑捕获
             // 比如这样的：call void @llvm.memset.p0i8.i64(i8* align 8 %0, i8 0, i64 8, i1 false), !dbg !26
-        } else if (CallInst *callInst = dyn_cast<CallInst>(inst)) {
+        } else if (MemCpyInst* memCpyInst = dyn_cast<MemCpyInst>(inst)){
+            handleMemcpyInst(memCpyInst, pInfo);
+        }else if (CallInst *callInst = dyn_cast<CallInst>(inst)) {
             // 处理函数调用
             handleCallInst(callInst, pInfo);
         } else if (PHINode *phiNode = dyn_cast<PHINode>(inst)) {

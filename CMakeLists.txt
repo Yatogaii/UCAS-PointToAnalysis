@@ -71,6 +71,7 @@ foreach(test_info ${test_data})
 			NAME ${test_name}
 			COMMAND bash -c "${LLVM_TOOLS_BINARY_DIR}/clang -O0 -g3 -emit-llvm ${CMAKE_CURRENT_SOURCE_DIR}/test/${test_name}.c -c -o ${CMAKE_CURRENT_SOURCE_DIR}/test/${test_name}.bc && $<TARGET_FILE:assignment3> ${CMAKE_CURRENT_SOURCE_DIR}/test/${test_name}.bc"
 	)
+	set_tests_properties(${test_name} PROPERTIES TIMEOUT 3)
 	set_tests_properties(${test_name} PROPERTIES
 			PASS_REGULAR_EXPRESSION ${test_val}
 			LABELS "official"
